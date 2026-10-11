@@ -1,8 +1,11 @@
 # Shiftmate: Alexa+ shop-floor copilot
 
+> **Live demo:** [Open Shiftmate Ops Console](https://shiftmate-shopfloor-demo.mayankrajput244251.chatgpt.site)
+
+
 Shiftmate is an evidence-first shop-floor assistant backed by a self-hosted **Model Context Protocol (MCP) server over Streamable HTTP**. A shift lead can ask about output, quality, line health, or open work; the browser discovers and calls the server’s tools, then shows the evidence returned with each answer. Proposed write-like actions are previewed by the server and only applied to local demo state after a human confirms.
 
-This project uses the Alexa+ hackathon’s MCP-server path. It is not an Alexa+ production integration, Alexa Skill, or connection to factory equipment. The plant readings and all actions are fictional demo data. No cloud AI model or AWS service is used.
+The dashboard includes a dark operator-console UI with advanced line filters, adjustable vibration thresholds, configurable refresh controls, and voice input. Preferences are stored in the browser. This project uses the Alexa+ hackathon’s MCP-server path. It is not an Alexa+ production integration, Alexa Skill, or connection to factory equipment. The plant readings and all actions are fictional demo data. No cloud AI model or AWS service is used.
 
 ## Run the demo
 
