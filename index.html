@@ -54,4 +54,72 @@ function toast(t){const el=document.getElementById('toast');el.textContent=t;el.
 document.getElementById('sendBtn').onclick=()=>ask(input.value);input.addEventListener('keydown',e=>{if(e.key==='Enter')ask(input.value)});document.querySelectorAll('.suggestions button').forEach(b=>b.onclick=()=>ask(b.dataset.prompt));
 const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;const mic=document.getElementById('micBtn');if(Recognition){mic.onclick=()=>{const rec=new Recognition();rec.lang='en-IN';rec.interimResults=false;rec.onstart=()=>{mic.textContent='●';mic.style.color='var(--red)'};rec.onend=()=>{mic.textContent='◉';mic.style.color='var(--teal)'};rec.onerror=()=>toast('Mic unavailable — type your question instead');rec.onresult=e=>ask(e.results[0][0].transcript);rec.start()}}else{mic.onclick=()=>toast('Voice input is unavailable in this browser. Type below.')}
 document.getElementById('addBtn').onclick=()=>document.getElementById('modalveil').classList.add('open');document.getElementById('cancelModal').onclick=()=>document.getElementById('modalveil').classList.remove('open');document.getElementById('createTicket').onclick=()=>{const line=document.getElementById('lineInput').value.trim()||'Line 2',issue=document.getElementById('issueInput').value.trim()||'Inspect at next safe stop.';document.getElementById('modalveil').classList.remove('open');createTicket(line,issue)};document.getElementById('modalveil').onclick=e=>{if(e.target.id==='modalveil')e.currentTarget.classList.remove('open')};renderLines();
+</script>
+<script>
+// Browser MCP client: discovers tools from the self-hosted Streamable HTTP server and invokes them for every supported question.
+const MCP_ENDPOINT='http://127.0.0.1:4318/mcp';
+let mcpSession=null,mcpId=10,mcpReady=false,mcpTools=[];
+async function mcpRequest(method,params={},initializing=false){
+  const headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'};
+  if(!initializing){headers['MCP-Protocol-Version']='2025-11-25';headers['MCP-Session-Id']=mcpSession}
+  const response=await fetch(MCP_ENDPOINT,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',id:mcpId++,method,params})});
+  if(initializing)mcpSession=response.headers.get('MCP-Session-Id');
+  if(response.status===202)return null;
+  const payload=await response.json();
+  if(!response.ok||payload.error)throw new Error(payload.error?.message||`MCP request failed (${response.status})`);
+  return payload.result;
+}
+async function mcpNotify(method){
+  const headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25','MCP-Session-Id':mcpSession};
+  const response=await fetch(MCP_ENDPOINT,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',method})});
+  if(response.status!==202)throw new Error(`MCP notification failed (${response.status})`);
+}
+async function connectMcp(){
+  const initialized=await mcpRequest('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'shiftmate-web-demo',version:'1.0.0'}},true);
+  await mcpNotify('notifications/initialized');
+  const listed=await mcpRequest('tools/list');mcpTools=listed.tools||[];mcpReady=true;
+  const context=document.querySelector('.context');context.innerHTML=`<b>MCP connected</b> · ${mcpTools.length} tools discovered · protocol ${initialized.protocolVersion}`;
+  document.querySelector('.a-head small').textContent='MCP tools connected · demo data only';
+  document.querySelector('.hint').textContent='Connected to local Shiftmate MCP · actions require confirmation · simulated data only';
+  await syncDashboard();
+  setReply(`The shop-floor tool server is connected. I can check output, quality, line diagnostics, and open actions. I’ll show the evidence returned by each tool.`, 'MCP handshake complete · 2025-11-25 · tool discovery succeeded', 'initialize + tools/list');
+}
+async function callMcpTool(name,args={}){
+  const result=await mcpRequest('tools/call',{name,arguments:args});
+  if(result?.isError)throw new Error(result.content?.map(x=>x.text).join('\n')||'MCP tool returned an error');
+  if(result?.structuredContent)return result.structuredContent;
+  return JSON.parse(result.content?.find(x=>x.type==='text')?.text||'{}');
+}
+async function syncDashboard(){
+  if(!mcpReady)return;
+  const summary=await callMcpTool('get_shift_summary');
+  summary.lines.forEach(remote=>{const local=plant.lines.find(line=>line.id===remote.id);if(local){local.status=remote.status;local.output=remote.output;local.uptime=remote.uptimePct;if(remote.status==='PAUSED')plant.paused.add(remote.id);else plant.paused.delete(remote.id)}});
+  const actions=await callMcpTool('list_open_actions');plant.tickets=actions.draftWorkOrders.map((ticket,index)=>({id:index+1,line:ticket.lineName,issue:ticket.issue}));
+  renderLines();
+}
+function classifyQuestion(q){const s=q.toLowerCase();if(/shift summary|summari[sz]e|how.*shift|status.*floor|what.*happening/.test(s))return['get_shift_summary',{}];if(/quality|yield|reject|defect/.test(s))return['get_quality_summary',{}];if(/action|work order|ticket/.test(s)&&!/create|open|log|raise|make/.test(s))return['list_open_actions',{}];const match=s.match(/line\s*(1|2|3)|line\s*(one|two|three)/);const lineId=match?Number(match[1]||({one:1,two:2,three:3}[match[2]])):2;if(/why|slow|vibrat|bearing|diagnos|temperature|sensor|check first|priority|urgent|problem|issue/.test(s))return['get_line_diagnostics',{lineId}];if(/what.*(check|first|next)|where.*start|priority|urgent/.test(s))return['get_shift_summary',{}];if(/pause|stop|shut.*down/.test(s))return['prepare_demo_action',{action:'pause_line',lineId}];if(/resume|restart|start/.test(s))return['prepare_demo_action',{action:'resume_line',lineId}];if(/create|open|log|raise|make/.test(s)&&/ticket|maintenance|work order/.test(s))return['prepare_demo_action',{action:'create_work_order',lineId,issue:'Inspect motor bearing at the next safe stop.'}];return[null,{}]}
+function displayMcpData(tool,data){
+  const e=esc;
+  if(tool==='get_shift_summary'){const p=data.priority;setReply(`Shift A has produced <b>${data.production.goodUnits.toLocaleString()} / ${data.production.targetUnits.toLocaleString()} good units</b> (${data.production.completionPct}%). First-pass yield is <b>${data.quality.firstPassYieldPct}%</b> against a ${data.quality.targetPct}% target. ${p?`<b>Priority: Line ${p.lineId}.</b> ${e(p.reason)} Reading ${e(p.reading)} vs ${e(p.threshold)}. ${e(p.recommendation)}`:'No watched lines currently need attention.'}`,`Evidence · ${data.evidence.join(' · ')} · sample window ${data.shift.window}`,'get_shift_summary');return}
+  if(tool==='get_line_diagnostics'){const l=data.line,s=data.sensors[0],t=data.sensors[1];setReply(`<b>${e(l.name)} · ${e(data.assessment.severity.toUpperCase())}</b> · ${l.uptimePct}% uptime, ${l.output}/${l.target} units. ${e(s.metric)}: <b>${s.value} ${e(s.unit)}</b> vs ${s.watchThreshold} ${e(s.unit)} watch threshold (${e(s.direction)} ${Math.abs(s.changeSinceStart)} since shift start). Temperature: ${t.value} ${e(t.unit)}. <b>Next step:</b> ${e(data.assessment.recommendation)}`,`Evidence · ${data.evidence.join(' · ')} · method: ${data.assessment.confidence}`,'get_line_diagnostics');return}
+  if(tool==='get_quality_summary'){const r=data.rejects;setReply(`First-pass yield is <b>${data.firstPassYieldPct}%</b>, ${data.aboveTargetByPoints} points above the ${data.targetPct}% target. Rejects: ${r.dimensional} dimensional, ${r.surfaceFinish} surface finish, ${r.other} other. Line ${data.nextSample.lineId} sample is due in ${data.nextSample.dueInMinutes} minutes; last sample ${data.nextSample.lastSample}.`,`Evidence · Quality log · ${data.nextSample.source}`,'get_quality_summary');return}
+  const list=data.openSignals.map(a=>`${a.title} (${a.reading})`).concat(data.draftWorkOrders.map(a=>`${a.id} · ${a.lineName} · ${a.status}`));setReply(list.length?`There are <b>${data.count} open items</b>: ${list.map(e).join('; ')}.`:'There are no open items.',`Evidence · Shift action queue · ${data.pendingConfirmations} pending preview(s)`,'list_open_actions');
+}
+async function askThroughMcp(q){
+  addMessage(esc(q),'user');input.value='';
+  try{
+    const [tool,args]=classifyQuestion(q);
+    if(!tool){setReply('Try “Give me the shift summary,” “Why is Line 2 slowing down?”, “Show quality,” “List open actions,” or “Create a maintenance ticket for Line 2.” I’ll call the matching MCP tool and show its evidence.','Intent not mapped to a tool · no server action taken','');return}
+    if(tool==='prepare_demo_action'){
+      const preview=await callMcpTool(tool,args);
+      const description=preview.action==='create_work_order'?`${preview.issue} Draft only; no external system write.`:`${preview.effect} No production equipment is connected.`;
+      const card=addMessage(`<b>Review action preview</b><br>${esc(preview.title)}<br>${esc(description)}<br><small>Expires in ${preview.expiresInSeconds}s · action ID ${esc(preview.actionId.slice(0,8))}</small>`);
+      const box=document.createElement('div');box.className='actionbox';const title=document.createElement('strong');title.textContent='Human confirmation required';const desc=document.createElement('p');desc.textContent='The MCP server has prepared this action but has not applied it.';const yes=document.createElement('button');yes.textContent='Confirm action';yes.onclick=async()=>{yes.disabled=true;try{const applied=await callMcpTool('confirm_demo_action',{actionId:preview.actionId,confirmed:true});box.remove();card.insertAdjacentHTML('beforeend',`<span class="source">${esc(applied.notice)}</span><span class="toolpill">confirm_demo_action → ${esc(applied.status)}</span>`);await syncDashboard();toast(applied.status.replaceAll('_',' ').toLowerCase())}catch(err){desc.textContent=err.message;yes.disabled=false}};const no=document.createElement('button');no.className='secondary';no.textContent='Cancel';no.onclick=()=>{box.remove();setReply('Cancelled. No demo action was applied.','Pending preview discarded by operator','')};box.append(title,desc,yes,no);thread.appendChild(box);thread.scrollTop=thread.scrollHeight;
+      const pill=document.createElement('span');pill.className='toolpill';pill.textContent='prepare_demo_action → preview only';card.appendChild(pill);return;
+    }
+    const data=await callMcpTool(tool,args);displayMcpData(tool,data);
+  }catch(error){setReply(`I couldn’t reach the MCP tool server: ${esc(error.message)}. Start it with <code>npm start</code>, then reload this page.`,`Transport error · no action was applied`,'')}
+}
+const legacyAsk=ask;ask=function(raw){const q=raw.trim();if(!q)return;if(mcpReady){askThroughMcp(q);return}legacyAsk(q)};
+connectMcp().catch(error=>{mcpReady=false;document.querySelector('.context').innerHTML='<b class="warn">MCP server offline</b> · start it with npm start, then refresh';document.querySelector('.a-head small').textContent='Offline demo fallback · start MCP server for tool calls';document.querySelector('.hint').textContent='MCP server not connected · local fallback is limited · demo data only';setReply('I could not connect to the local MCP server. Start it with npm start and reload to enable real tool discovery and calls.',`Connection error · ${esc(error.message)}`,'')});
 </script></body></html>
