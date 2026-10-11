@@ -64,8 +64,8 @@ No AWS service, Amazon device SDK, Alexa+ Skill, or MCP server is used by this p
 ## Submission checklist
 
 - Track: Alexa+ simulated experience.
-- Repository: private repository; share it with `testing@devpost.com` and the Amazon reviewers listed in the event rules.
+- Repository: private repository; share it with `testing@devpost.com`, `chris-trag`, `knmeiss`, `giolaq`, `anishamalde`, `mosesroth`, and `emersonsklar`.
 - Demo video: record the above flow, upload publicly to YouTube or Vimeo, in English, under three minutes, and paste the URL into Devpost.
 - Product feedback: use the feedback section above and adjust it to match your actual experience before submission.
-- Repo URL: `https://github.com/mayankrajput244251-rgb/AutoForge-Sentinel/tree/main/amazon-device-hackathon`
+- Repo URL: `https://github.com/mayankrajput244251-rgb/shiftmate-alexa-plus`
 
