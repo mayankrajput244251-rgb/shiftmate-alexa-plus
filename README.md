@@ -1,48 +1,63 @@
-# Shiftmate: Alexa+ style shop-floor copilot
+# Shiftmate: Alexa+ shop-floor copilot
 
-Shiftmate is a browser-based simulated Alexa+ experience for a small factory shift lead. Ask about output, line status, sensor warnings, quality, or open actions in plain language. The assistant uses a visible demo plant dataset, cites the reading used for its answer, and asks for confirmation before it changes a simulated line state or creates a draft work order.
+Shiftmate is an evidence-first shop-floor assistant backed by a self-hosted **Model Context Protocol (MCP) server over Streamable HTTP**. A shift lead can ask about output, quality, line health, or open work; the browser discovers and calls the server’s tools, then shows the evidence returned with each answer. Proposed write-like actions are previewed by the server and only applied to local demo state after a human confirms.
 
-This is the Alexa+ **simulated-experience path** for the Build, Ship, Shape: Amazon Developer Hackathon. It is not an Alexa Skill, an MCP server, an Alexa+ integration, or connected to real factory equipment. The simulation path does not require a particular SDK; the complete source for the web experience is included here.
+This project uses the Alexa+ hackathon’s MCP-server path. It is not an Alexa+ production integration, Alexa Skill, or connection to factory equipment. The plant readings and all actions are fictional demo data. No cloud AI model or AWS service is used.
 
-## Run it
+## Run the demo
 
-Open `index.html` in a current desktop browser, or serve this folder locally:
+Requires Node.js 20 or newer and Python 3.
+
+Terminal 1 — start the self-hosted MCP server:
+
+```bash
+npm start
+```
+
+Terminal 2 — serve the browser client from this folder:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then open <http://localhost:8000>. The app has no build step, accounts, API keys, external services, or third-party runtime dependencies. Browser speech recognition is optional and depends on browser support and microphone permission; text input always works.
+Open <http://localhost:8000>. Keep both processes running. The MCP server binds to `127.0.0.1:4318` and exposes one Streamable HTTP endpoint at <http://127.0.0.1:4318/mcp>. The page performs the MCP initialize handshake, sends `notifications/initialized`, discovers tools, and invokes them over HTTP. No API key, cloud account, or install step is required.
 
-## Demo flow
+## Try it
 
-1. Ask: “Give me the shift summary.” See output, yield, and line status explained with data sources.
-2. Ask: “Why is Line 2 slowing down?” See the sensor reading, threshold, trend, and a suggested next step.
-3. Confirm the draft work order. See the action queue update.
-4. Ask: “Pause Line 2.” Confirm the action and see that only the demo line state changes.
-5. Ask: “Show quality.” See yield and reject categories.
+- “Give me the shift summary” — reads production and quality tools and highlights the top signal.
+- “Why is Line 2 slowing down?” — returns vibration, threshold, shift-start comparison, evidence, and a rule-based next step.
+- “Show quality” — reads yield, reject categories, and the next scheduled sample.
+- “Create a maintenance ticket for Line 2” — asks the server to prepare a draft, displays a confirmation, then adds a local draft only after confirmation.
+- “Pause Line 2” — demonstrates a confirmation-gated, simulated state change; no equipment is contacted.
 
-Use `HACKATHON_SUBMISSION.md` for the Devpost description, change log, demo narration, and product feedback draft.
+For protocol-level inspection, connect an MCP inspector to `http://127.0.0.1:4318/mcp` while the server is running. `mcp-config.json` records the endpoint, transport, and protocol version.
 
-## Interaction design
+## MCP tools
 
-- The assistant operates on a small allowlist of explicit plant queries and demo actions.
-- Answers include the simulated data source and timestamp; unknown questions are handled honestly.
-- Actions that affect the simulated operation require a second confirmation.
-- The UI labels the plant and controls as simulated, and never claims to contact equipment.
-- Speech input uses the browser's Web Speech API when available. It is a convenience layer over the same deterministic command handler, not a cloud Alexa service.
+| Tool | Purpose | Behavior |
+|---|---|---|
+| `get_shift_summary` | Shift output, yield, line status, and top signal | Read only |
+| `get_line_diagnostics` | Sensor thresholds, trend comparison, and bounded recommendation | Read only; rule based |
+| `get_quality_summary` | Yield, target, reject counts, and next sample | Read only |
+| `list_open_actions` | Signals and draft work orders | Read only |
+| `prepare_demo_action` | Preview a work order or simulated pause/resume | No state change |
+| `confirm_demo_action` | Apply a fresh preview after explicit user confirmation | Local demo state only; one use; expires after five minutes |
 
-## Project layout
+The server implements JSON-RPC over Streamable HTTP with protocol version `2025-11-25`, session IDs, `MCP-Protocol-Version` checks, local Origin/Host validation, loopback binding, and JSON responses. It does not open a GET event stream; GET receives 405, which the transport specification permits for servers that do not offer server-initiated SSE. The demo transport has no authentication because it is bound to loopback; do not expose it to a network.
 
-- `index.html` — complete app, styles, demo data, and deterministic assistant logic.
-- `HACKATHON_SUBMISSION.md` — prepared submission text and a short video plan.
-- `LICENSE` — MIT license for this additional open-source project.
+## Tests
 
-## Test checklist
+```bash
+npm test
+```
 
-- Open the app and confirm all three production lines render.
-- Try the five demo prompts above using the text box.
-- Confirm and cancel a ticket; confirm a pause and resume; verify the page always states that these are simulated actions.
-- Resize to a phone-width viewport; the dashboard and assistant should stack and remain usable.
+Tests cover protocol initialization and tool discovery, evidence-bearing diagnostics, confirmation gating, expired/replayed previews, and JSON-RPC errors. The dataset and thresholds are fictional; the diagnostic is a simple threshold rule, not a validated predictive-maintenance model.
 
-All readings and operator identities shown in the demo are fictional sample data.
+## Project files
+
+- `index.html` — responsive dashboard and browser MCP client.
+- `server.mjs` — self-hosted Streamable HTTP MCP endpoint, demo tools, and simulated state.
+- `test/server.test.mjs` — protocol/tool behavior tests.
+- `mcp-config.json` — endpoint and protocol metadata.
+- `HACKATHON_SUBMISSION.md` — submission draft, product feedback, friction log, and demo narration.
+- `LICENSE` — MIT license.
