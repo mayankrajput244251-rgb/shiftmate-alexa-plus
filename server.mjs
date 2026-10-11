@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 export const PROTOCOL_VERSION = '2025-11-25';
 const PORT = Number(process.env.PORT || 4318);
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = '127.0.0.1';
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const ACTION_TTL_MS = 5 * 60 * 1000;
 
