@@ -6,7 +6,7 @@
   "description": "Evidence-first shop-floor copilot with a self-hosted MCP Streamable HTTP server",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test"
+    "test": "node test/server.test.mjs"
   },
   "engines": {
     "node": ">=20"
